@@ -2905,6 +2905,9 @@ void SurgeGUIEditor::toggleMPE()
 {
     this->synth->mpeEnabled = !this->synth->mpeEnabled;
 
+    Surge::Storage::updateUserDefaultValue(&(this->synth->storage), Surge::Storage::MPEEnabled,
+                                           this->synth->mpeEnabled ? 1 : 0);
+
     if (statusMPE)
     {
         this->synth->resetPitchBend(-1);
