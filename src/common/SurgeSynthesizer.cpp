@@ -268,7 +268,7 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer *parent, const std::string &suppl
         memset(&channelState[i], 0, sizeof(MidiChannelState));
     }
 
-    mpeEnabled = false;
+    mpeEnabled = (bool)Surge::Storage::getUserDefaultValue(&storage, Surge::Storage::MPEEnabled, 0);
     mpeVoices = 0;
     storage.mpePitchBendRange =
         (float)Surge::Storage::getUserDefaultValue(&storage, Surge::Storage::MPEPitchBendRange, 48);

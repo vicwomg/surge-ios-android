@@ -97,6 +97,7 @@ enum DefaultKey
     VirtualKeyboardLayout,
     UseSoftwareRenderer,
 
+    MPEEnabled,
     MPEPitchBendRange,
     MPETimbreIsUnipolar,
     PitchSmoothingMode,
