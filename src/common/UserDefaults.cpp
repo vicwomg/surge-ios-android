@@ -54,6 +54,9 @@ std::string defaultKeyToString(DefaultKey k)
     case MiddleC:
         r = "middleC";
         break;
+    case MPEEnabled:
+        r = "mpeEnabled";
+        break;
     case MPEPitchBendRange:
         r = "mpePitchBendRange";
         break;
