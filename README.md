@@ -7,27 +7,29 @@ This is an unofficial iOS & Android Port of Surge XT. Since Surge is built on JU
 The main work done to make this functional:
 
 - Add iOS/Android handling to the cmake system and incompatible libraries (luajit)
-- Handle factory presets bundling and APK zip extraction for Android
+- Handle factory presets bundling and APK zip extraction of assets for Android
 - Handle persistent storage of user settings and patches to mobile app data paths
 - Expose JUCE audio "Options" button to mobile UI layer
 
 Beyond that, there were some quality of life enhancements:
 
-- Allow right-click via two-finger click (tap + hold on the control, then tap with a second finger)
-- Allow sub menu access: Surge > Menu > sub-menus can be opened by tap + hold + drag
 - Force landscape mode, handle proper zooming to fit screen
-- Implement touch scrolling, zoom -/+, and "fit to screen" to cram the extensive UI in smaller screens (iPad/Tablets are usable best-fit, Phones need scrolling)
+- Allow right-click and sub-menu access via long press
+- Scroll/pan the UI with two-finger swiping
+- zoom -/+, and "fit to screen" to cram the extensive UI in smaller screens (iPad/Tablets are usable best-fit, Phones need scrolling)
 - Fix some issues rendering the Virtual Keyboard
 - Keep screen on while app is running
 
 For devs:
 **iOS Build Instructions:** Xcode build instructions are included in the original documentation below. The `.ipa` file can be generated with `create_ipa_build.sh`.
-
 **Android Build Instructions:** See [Building for Android](#building-for-android).
 
-# Surge XT
+Installation:
 
-This is a working
+- iOS: installing the .ipa to a device requres signing it with a personal developer account, 3rd-party signing service, or sideloading methods (altstore, sidestore)
+- Android: installing the .apk is straightforward. Download to the device and click to install
+
+# Surge XT
 
 **If you are a musician looking to use Surge XT, please download the appropriate binary
 [from our website](https://surge-synthesizer.github.io). Surge Synth Team makes regular releases for all supported
