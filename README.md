@@ -26,6 +26,8 @@ For devs:
 
 Installation:
 
+Go to the releases section of this repo: [Latest Release](releases/latest)
+
 - iOS: installing the .ipa to a device requres signing it with a personal developer account, 3rd-party signing service, or sideloading methods (altstore, sidestore)
 - Android: installing the .apk is straightforward. Download to the device and click to install
 
