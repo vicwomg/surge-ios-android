@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   message(STATUS "Configuring for iOS build...")
+  option(SURGE_IOS_BUNDLE_FACTORY_DATA "Bundle factory data into iOS app packages" ON)
   set(SURGE_BUILD_TESTRUNNER OFF CACHE BOOL "Build Surge unit test runner" FORCE)
   set(SURGE_SKIP_VST3 ON CACHE BOOL "Skip VST3 build" FORCE)
   set(SURGE_XT_BUILD_AUV3 OFF CACHE BOOL "Build Surge XT as an AUv3" FORCE)

@@ -185,6 +185,9 @@ enum DefaultKey
     OSCPortOut,
     OSCIPOut,
 
+    // Mobile settings
+    MobileScrollPosition,
+
     nKeys
 };
 

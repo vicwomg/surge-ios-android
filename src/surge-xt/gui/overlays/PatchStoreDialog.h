@@ -94,6 +94,7 @@ struct PatchStoreDialog : public OverlayComponent,
     void onSkinChanged() override;
     void textEditorFocusLost(juce::TextEditor &) override;
     void buttonClicked(juce::Button *button) override;
+    void mouseDown(const juce::MouseEvent &) override;
     std::unique_ptr<juce::TextEditor> nameEd, authorEd, catEd, licenseEd, tagEd, commentEd;
     std::unique_ptr<juce::Label> nameEdL, authorEdL, catEdL, licenseEdL, tagEdL, commentEdL;
     std::unique_ptr<Widgets::SurgeTextButton> okButton, okOverButton, cancelButton;

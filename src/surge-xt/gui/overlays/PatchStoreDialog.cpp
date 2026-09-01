@@ -167,6 +167,16 @@ PatchStoreDialog::PatchStoreDialog()
     commentEd->setReturnKeyStartsNewLine(true);
     commentEd->setJustification(juce::Justification::topLeft);
 
+    nameEd->onReturnKey = [this]() { catEd->grabKeyboardFocus(); };
+    authorEd->onReturnKey = [this]() { licenseEd->grabKeyboardFocus(); };
+    licenseEd->onReturnKey = [this]() {
+        if (showTagsField)
+            tagEd->grabKeyboardFocus();
+        else
+            juce::Component::unfocusAllComponents();
+    };
+    tagEd->onReturnKey = [this]() { juce::Component::unfocusAllComponents(); };
+
     categoryProvider = std::make_unique<PatchStoreDialogCategoryProvider>();
     auto ta = std::make_unique<Surge::Widgets::TypeAhead>("patch category", categoryProvider.get());
 
@@ -353,13 +363,140 @@ void PatchStoreDialog::onSkinChanged()
     okOverButton->setSkin(skin, associatedBitmapStore);
 }
 
+void PatchStoreDialog::mouseDown(const juce::MouseEvent &e)
+{
+    juce::Component::unfocusAllComponents();
+}
+
 void PatchStoreDialog::setIsRename(bool b) { isRename = b; }
 
 void PatchStoreDialog::resized()
 {
-    auto h = 25;
     bool showTuning = editor && !editor->synth->storage.isStandardTuning;
     bool showCheckboxRow = hasSnapshots || showTuning;
+
+    if (getWidth() >= 500)
+    {
+        auto margin = 4;
+        auto margin2 = 2;
+        auto buttonHeight = 22;
+        auto buttonWidth = 65;
+        auto dialogCenter = getLocalBounds().getWidth() / 2;
+
+        // Bottom button bar: [ OK ] [ Cancel ]
+        auto bounds = getLocalBounds();
+        auto buttonRow =
+            bounds.removeFromBottom(buttonHeight + margin2 * 2).reduced(margin, margin2);
+
+        auto be =
+            buttonRow.withTrimmedLeft(dialogCenter - buttonWidth - margin2 * 2).withWidth(buttonWidth);
+        okButton->setBounds(be);
+        be = buttonRow.withTrimmedLeft(dialogCenter + margin2 * 2).withWidth(buttonWidth);
+        cancelButton->setBounds(be);
+
+        if (okOverButton->isVisible())
+        {
+            auto overW = 120;
+            okOverButton->setBounds(
+                buttonRow.withRightX(buttonRow.getRight()).withWidth(overW));
+        }
+
+        // Content area above buttons
+        auto contentArea = bounds.reduced(margin, margin2);
+        int colGap = 12;
+        int leftColW = (contentArea.getWidth() - colGap) * 48 / 100;
+        auto leftArea = contentArea.removeFromLeft(leftColW);
+        contentArea.removeFromLeft(colGap);
+        auto rightArea = contentArea;
+
+        // Left Column: Name, Category, Author, License (and Tags if shown)
+        int numLeftRows = 4 + (showTagsField ? 1 : 0);
+        int rowH = juce::jmin(22, (leftArea.getHeight() - (numLeftRows - 1) * margin2) / numLeftRows);
+        int labelW = 58;
+
+        auto layoutField = [&](juce::Rectangle<int> &col, juce::Label *lbl, juce::Component *ed) {
+            auto row = col.removeFromTop(rowH);
+            lbl->setBounds(row.removeFromLeft(labelW));
+            row.removeFromLeft(margin2);
+            ed->setBounds(row);
+            if (auto te = dynamic_cast<juce::TextEditor *>(ed))
+                te->setIndents(4, (te->getHeight() - te->getTextHeight()) / 2);
+            col.removeFromTop(margin2);
+        };
+
+        layoutField(leftArea, nameEdL.get(), nameEd.get());
+        layoutField(leftArea, catEdL.get(), catEd.get());
+        layoutField(leftArea, authorEdL.get(), authorEd.get());
+        layoutField(leftArea, licenseEdL.get(), licenseEd.get());
+        if (showTagsField)
+        {
+            layoutField(leftArea, tagEdL.get(), tagEd.get());
+        }
+
+        // Right Column: Checkboxes at bottom, 4-row Comment field on top
+        if (showCheckboxRow)
+        {
+            int checkboxH = 20;
+            auto checkRow = rightArea.removeFromBottom(checkboxH);
+            int halfW = checkRow.getWidth() / 2;
+            int boxW = 17;
+
+            auto tuningBox =
+                juce::Rectangle<int>(checkRow.getX(), checkRow.getY() + (checkboxH - 15) / 2, boxW, 15);
+            auto tuningLabel = juce::Rectangle<int>(checkRow.getX() + boxW + 2, checkRow.getY(),
+                                                    halfW - boxW - 4, checkboxH);
+
+            auto snapBox = juce::Rectangle<int>(checkRow.getX() + halfW,
+                                                checkRow.getY() + (checkboxH - 15) / 2, boxW, 15);
+            auto snapLabel = juce::Rectangle<int>(checkRow.getX() + halfW + boxW + 2, checkRow.getY(),
+                                                  halfW - boxW - 4, checkboxH);
+
+            storeTuningLabel->setVisible(true);
+            storeTuningLabel->setBounds(tuningLabel);
+            storeTuningLabel->setEnabled(showTuning);
+            storeTuningLabel->setAlpha(showTuning ? 1.0f : 0.5f);
+            storeTuningButton->setVisible(true);
+            storeTuningButton->setEnabled(showTuning);
+            storeTuningButton->setAlpha(showTuning ? 1.0f : 0.5f);
+            storeTuningButton->setBounds(tuningBox);
+
+            storeSnapshotsLabel->setVisible(true);
+            storeSnapshotsLabel->setBounds(snapLabel);
+            storeSnapshotsLabel->setEnabled(hasSnapshots);
+            storeSnapshotsLabel->setAlpha(hasSnapshots ? 1.0f : 0.5f);
+            storeSnapshotsButton->setVisible(true);
+            storeSnapshotsButton->setEnabled(hasSnapshots);
+            storeSnapshotsButton->setAlpha(hasSnapshots ? 1.0f : 0.5f);
+            storeSnapshotsButton->setBounds(snapBox);
+
+            rightArea.removeFromBottom(margin2);
+        }
+        else
+        {
+            storeTuningButton->setVisible(false);
+            storeTuningLabel->setVisible(false);
+            storeSnapshotsButton->setVisible(false);
+            storeSnapshotsLabel->setVisible(false);
+        }
+
+        // Comment area: label on left, 4-row multi-line editor on right
+        int commLabelW = 58;
+        int commH = juce::jmin(70, rightArea.getHeight());
+        auto commArea = rightArea.removeFromTop(commH);
+        auto commLabelRect = commArea.withWidth(commLabelW).withHeight(22);
+        commentEdL->setBounds(commLabelRect);
+        auto commEditRect = commArea.withTrimmedLeft(commLabelW + margin2);
+        commentEd->setBounds(commEditRect);
+
+        if (isVisible())
+        {
+            Surge::GUI::grabKeyboardFocusIfAllowed(nameEd.get());
+        }
+
+        return;
+    }
+
+    auto h = 25;
     int extraRowH = showCheckboxRow ? 22 : 0;
     auto commH = getHeight() - (6 + showTagsField) * h - extraRowH + 8;
     auto xSplit = 70;

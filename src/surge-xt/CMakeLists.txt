@@ -281,18 +281,32 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
     target_compile_definitions(${PROJECT_NAME}_Standalone PRIVATE JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
   endif()
 
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-    foreach(fmt Standalone AUv3)
-      if(TARGET ${PROJECT_NAME}_${fmt})
-        add_custom_command(
-          TARGET ${PROJECT_NAME}_${fmt}
-          POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_SOURCE_DIR}/resources/data"
-            "$<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}_${fmt}>/SurgeXTData"
-        )
-      endif()
-    endforeach()
+  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    if(SURGE_IOS_BUNDLE_FACTORY_DATA)
+      foreach(fmt Standalone AUv3)
+        if(TARGET ${PROJECT_NAME}_${fmt})
+          add_custom_command(
+            TARGET ${PROJECT_NAME}_${fmt}
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_SOURCE_DIR}/resources/data"
+              "$<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}_${fmt}>/SurgeXTData"
+          )
+        endif()
+      endforeach()
+    else()
+      message(STATUS "Skipping bundled iOS factory data (SURGE_IOS_BUNDLE_FACTORY_DATA=OFF)")
+      foreach(fmt Standalone AUv3)
+        if(TARGET ${PROJECT_NAME}_${fmt})
+          add_custom_command(
+            TARGET ${PROJECT_NAME}_${fmt}
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}_${fmt}>/SurgeXTData"
+          )
+        endif()
+      endforeach()
+    endif()
   endif()
 endif()
 

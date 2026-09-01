@@ -401,6 +401,10 @@ std::string defaultKeyToString(DefaultKey k)
         r = "startOSCOut";
         break;
 
+    case MobileScrollPosition:
+        r = "mobileScrollPosition";
+        break;
+
     case nKeys:
         break;
     }

@@ -652,6 +652,11 @@ void OverlayWrapper::mouseDown(const juce::MouseEvent &e)
         return;
     }
 
+    if (isModal)
+    {
+        juce::Component::unfocusAllComponents();
+    }
+
     auto c = getPrimaryChildAsOverlayComponent();
 
     if (c && c->getCanMoveAround())

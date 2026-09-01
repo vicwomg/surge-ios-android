@@ -154,6 +154,237 @@ class PluginHolder final : public juce::StandalonePluginHolder
     }
 };
 
+#if JUCE_ANDROID
+class AndroidAudioDeviceSettingsComponent final : public juce::Component,
+                                                  private juce::ChangeListener
+{
+  public:
+    AndroidAudioDeviceSettingsComponent(juce::AudioDeviceManager &deviceManagerToUse,
+                                        bool showMidiOutputSelector)
+        : deviceManager(deviceManagerToUse),
+          midiSelector(deviceManagerToUse, 0, 0, 0, 0, true, showMidiOutputSelector, true, false)
+    {
+        deviceLabel.setText("Device:", juce::dontSendNotification);
+        sampleRateLabel.setText("Sample rate:", juce::dontSendNotification);
+        bufferSizeLabel.setText("Audio buffer size:", juce::dontSendNotification);
+
+        addAndMakeVisible(deviceLabel);
+        addAndMakeVisible(deviceName);
+        addAndMakeVisible(sampleRateLabel);
+        addAndMakeVisible(sampleRateDropDown);
+        addAndMakeVisible(bufferSizeLabel);
+        addAndMakeVisible(bufferSizeDropDown);
+        addAndMakeVisible(midiSelector);
+
+        sampleRateDropDown.onChange = [this]() { applySampleRate(); };
+        bufferSizeDropDown.onChange = [this]() { applyBufferSize(); };
+
+        deviceManager.addChangeListener(this);
+        refresh();
+    }
+
+    ~AndroidAudioDeviceSettingsComponent() override { deviceManager.removeChangeListener(this); }
+
+    int getItemHeight() const { return itemHeight; }
+
+    int getRecommendedHeight() const
+    {
+        return topPadding + (itemHeight + rowGap) * 3 + sectionGap + midiSelector.getHeight() +
+               bottomPadding;
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced(horizontalPadding, topPadding);
+
+        layoutRow(r, deviceLabel, deviceName);
+        r.removeFromTop(rowGap);
+
+        layoutRow(r, sampleRateLabel, sampleRateDropDown);
+        r.removeFromTop(rowGap);
+
+        layoutRow(r, bufferSizeLabel, bufferSizeDropDown);
+        r.removeFromTop(sectionGap);
+
+        midiSelector.setBounds(r.withHeight(midiSelector.getHeight()));
+    }
+
+  private:
+    static constexpr int itemHeight = 24;
+    static constexpr int horizontalPadding = 8;
+    static constexpr int topPadding = 8;
+    static constexpr int bottomPadding = 8;
+    static constexpr int labelWidth = 130;
+    static constexpr int rowGap = 8;
+    static constexpr int sectionGap = 14;
+
+    juce::AudioDeviceManager &deviceManager;
+    juce::Label deviceLabel;
+    juce::Label deviceName;
+    juce::Label sampleRateLabel;
+    juce::ComboBox sampleRateDropDown;
+    juce::Label bufferSizeLabel;
+    juce::ComboBox bufferSizeDropDown;
+    juce::AudioDeviceSelectorComponent midiSelector;
+    juce::ScopedMessageBox messageBox;
+    bool isRefreshing = false;
+
+    void layoutRow(juce::Rectangle<int> &r, juce::Component &label, juce::Component &control)
+    {
+        auto row = r.removeFromTop(itemHeight);
+        label.setBounds(row.removeFromLeft(labelWidth));
+        row.removeFromLeft(8);
+        control.setBounds(row);
+    }
+
+    void changeListenerCallback(juce::ChangeBroadcaster *) override { refresh(); }
+
+    void refresh()
+    {
+        const juce::ScopedValueSetter<bool> scope(isRefreshing, true);
+
+        auto *device = deviceManager.getCurrentAudioDevice();
+        const auto hasDevice = device != nullptr;
+
+        deviceName.setText(hasDevice ? device->getTypeName() + " - " + device->getName()
+                                     : juce::String("No audio device"),
+                           juce::dontSendNotification);
+
+        sampleRateDropDown.setEnabled(hasDevice);
+        bufferSizeDropDown.setEnabled(hasDevice);
+        sampleRateDropDown.clear(juce::dontSendNotification);
+        bufferSizeDropDown.clear(juce::dontSendNotification);
+
+        if (device == nullptr)
+        {
+            setSize(getWidth(), getRecommendedHeight());
+            return;
+        }
+
+        auto currentRate = device->getCurrentSampleRate();
+        if (juce::approximatelyEqual(currentRate, 0.0))
+            currentRate = 48000.0;
+
+        auto rates = device->getAvailableSampleRates();
+        rates.sort();
+
+        for (auto rate : rates)
+        {
+            const auto intRate = juce::roundToInt(rate);
+            if (intRate > 0)
+                sampleRateDropDown.addItem(getSampleRateText(intRate), intRate);
+        }
+
+        const auto intCurrentRate = juce::roundToInt(currentRate);
+        if (sampleRateDropDown.indexOfItemId(intCurrentRate) >= 0)
+            sampleRateDropDown.setSelectedId(intCurrentRate, juce::dontSendNotification);
+        else
+            sampleRateDropDown.setText(getSampleRateText(intCurrentRate), juce::dontSendNotification);
+
+        auto bufferSizes = getConservativeAndroidBufferSizes(*device, currentRate);
+        const auto currentBufferSize = device->getCurrentBufferSizeSamples();
+
+        if (currentBufferSize > 0)
+            bufferSizes.addIfNotAlreadyThere(currentBufferSize);
+
+        bufferSizes.sort();
+
+        for (auto bufferSize : bufferSizes)
+            bufferSizeDropDown.addItem(getBufferSizeText(bufferSize, currentRate), bufferSize);
+
+        if (bufferSizeDropDown.indexOfItemId(currentBufferSize) >= 0)
+            bufferSizeDropDown.setSelectedId(currentBufferSize, juce::dontSendNotification);
+        else if (currentBufferSize > 0)
+            bufferSizeDropDown.setText(getBufferSizeText(currentBufferSize, currentRate),
+                                       juce::dontSendNotification);
+
+        setSize(getWidth(), getRecommendedHeight());
+    }
+
+    static juce::Array<int> getConservativeAndroidBufferSizes(juce::AudioIODevice &device,
+                                                              double currentRate)
+    {
+        auto available = device.getAvailableBufferSizes();
+        available.sort();
+
+        juce::Array<int> result;
+        static constexpr double targetDurationsMs[] = {8.0, 16.0, 24.0, 32.0, 40.0, 80.0};
+
+        for (auto targetDurationMs : targetDurationsMs)
+        {
+            const auto targetSamples =
+                juce::roundToInt(targetDurationMs * currentRate / 1000.0);
+
+            int chosenSize = 0;
+            for (auto availableSize : available)
+            {
+                if (availableSize >= targetSamples)
+                {
+                    chosenSize = availableSize;
+                    break;
+                }
+            }
+
+            if (chosenSize == 0 && !available.isEmpty())
+                chosenSize = available.getLast();
+
+            if (chosenSize > 0)
+                result.addIfNotAlreadyThere(chosenSize);
+        }
+
+        return result;
+    }
+
+    static juce::String getSampleRateText(int rate) { return juce::String(rate) + " Hz"; }
+
+    static juce::String getBufferSizeText(int bufferSize, double currentRate)
+    {
+        return juce::String(bufferSize) + " samples (" +
+               juce::String(bufferSize * 1000.0 / currentRate, 1) + " ms)";
+    }
+
+    void applySampleRate()
+    {
+        if (isRefreshing || sampleRateDropDown.getSelectedId() <= 0)
+            return;
+
+        auto config = deviceManager.getAudioDeviceSetup();
+        config.sampleRate = sampleRateDropDown.getSelectedId();
+        applyConfig(config);
+    }
+
+    void applyBufferSize()
+    {
+        if (isRefreshing || bufferSizeDropDown.getSelectedId() <= 0)
+            return;
+
+        auto config = deviceManager.getAudioDeviceSetup();
+        config.bufferSize = bufferSizeDropDown.getSelectedId();
+        applyConfig(config);
+    }
+
+    void applyConfig(const juce::AudioDeviceManager::AudioDeviceSetup &config)
+    {
+        auto error = deviceManager.setAudioDeviceSetup(config, true);
+
+        if (error.isNotEmpty())
+        {
+            messageBox = juce::AlertWindow::showScopedAsync(
+                juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::WarningIcon)
+                    .withTitle("Error when trying to open audio device!")
+                    .withMessage(error)
+                    .withButton("OK"),
+                nullptr);
+        }
+
+        refresh();
+    }
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AndroidAudioDeviceSettingsComponent)
+};
+#endif
+
 class AudioSettingsComponent final : public juce::Component
 {
   public:
@@ -161,11 +392,16 @@ class AudioSettingsComponent final : public juce::Component
                            juce::AudioDeviceManager &deviceManagerToUse,
                            int maxAudioInputChannels, int maxAudioOutputChannels)
         : owner(pluginHolder),
+#if JUCE_ANDROID
+          deviceSelector(deviceManagerToUse, pluginHolder.processor.get() != nullptr &&
+                                                 pluginHolder.processor->producesMidi()),
+#else
           deviceSelector(deviceManagerToUse, 0, maxAudioInputChannels, 0, maxAudioOutputChannels,
                          true,
                          (pluginHolder.processor.get() != nullptr &&
                           pluginHolder.processor->producesMidi()),
                          true, false),
+#endif
           shouldMuteLabel("Feedback Loop:", "Feedback Loop:"),
           shouldMuteButton("Mute audio input"), closeButton("Close Settings")
     {
@@ -243,7 +479,11 @@ class AudioSettingsComponent final : public juce::Component
     static constexpr int closeAreaHeight = 50;
 
     juce::StandalonePluginHolder &owner;
+#if JUCE_ANDROID
+    AndroidAudioDeviceSettingsComponent deviceSelector;
+#else
     juce::AudioDeviceSelectorComponent deviceSelector;
+#endif
     juce::Label shouldMuteLabel;
     juce::ToggleButton shouldMuteButton;
     juce::TextButton closeButton;
@@ -296,6 +536,44 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         setupiPhoneScrollIfNeeded();
     }
 
+    ~StandaloneWindow() override
+    {
+        saveScrollPosition();
+    }
+
+    void saveScrollPosition()
+    {
+        if (scrollViewport && pluginHolder && pluginHolder->processor)
+        {
+            if (auto *ed = dynamic_cast<SurgeSynthEditor *>(pluginHolder->processor->getActiveEditor()))
+            {
+                if (auto *sge = ed->getSurgeGUIEditor())
+                {
+                    auto pos = scrollViewport->getViewPosition();
+                    Surge::Storage::updateUserDefaultValue(&(sge->synth->storage),
+                                                           Surge::Storage::MobileScrollPosition,
+                                                           std::make_pair(pos.x, pos.y));
+                }
+            }
+        }
+    }
+
+    void saveZoom(float zf)
+    {
+        if (pluginHolder && pluginHolder->processor)
+        {
+            if (auto *ed = dynamic_cast<SurgeSynthEditor *>(pluginHolder->processor->getActiveEditor()))
+            {
+                if (auto *sge = ed->getSurgeGUIEditor())
+                {
+                    Surge::Storage::updateUserDefaultValue(&(sge->synth->storage),
+                                                           Surge::Storage::DefaultZoom,
+                                                           (int)std::round(zf));
+                }
+            }
+        }
+    }
+
     void changeZoom(float delta)
     {
         if (pluginHolder && pluginHolder->processor)
@@ -305,7 +583,10 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
                 if (auto* sge = ed->getSurgeGUIEditor())
                 {
                     float currentZoom = sge->getZoomFactor();
-                    sge->resizeWindow(currentZoom + delta);
+                    float newZoom = currentZoom + delta;
+                    sge->resizeWindow(newZoom);
+                    saveZoom(newZoom);
+                    saveScrollPosition();
                 }
             }
         }
@@ -349,7 +630,12 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
             if (auto *ed = dynamic_cast<SurgeSynthEditor *>(pluginHolder->processor->getActiveEditor()))
             {
                 if (auto *sge = ed->getSurgeGUIEditor())
-                    sge->resizeWindow(calcFitZoom());
+                {
+                    float fit = calcFitZoom();
+                    sge->resizeWindow(fit);
+                    saveZoom(fit);
+                    saveScrollPosition();
+                }
             }
         }
     }
@@ -412,11 +698,13 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
 
     struct SmartDragToScrollListener : public juce::MouseListener
     {
+        StandaloneWindow *owner;
         juce::Viewport *viewport;
         std::map<int, juce::Point<int>> lastMousePos;
         std::map<int, bool> isDraggingTouch;
 
-        SmartDragToScrollListener(juce::Viewport *v) : viewport(v) {}
+        SmartDragToScrollListener(StandaloneWindow *w, juce::Viewport *v)
+            : owner(w), viewport(v) {}
 
         void mouseDown(const juce::MouseEvent &e) override
         {
@@ -448,6 +736,11 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
 
         void mouseUp(const juce::MouseEvent &e) override
         {
+            if (isDraggingTouch[e.source.getIndex()])
+            {
+                if (owner)
+                    owner->saveScrollPosition();
+            }
             isDraggingTouch.erase(e.source.getIndex());
             lastMousePos.erase(e.source.getIndex());
         }
@@ -455,6 +748,54 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
 
     std::unique_ptr<juce::Viewport> scrollViewport;
     std::unique_ptr<SmartDragToScrollListener> smartDragListener;
+
+    void restoreSavedZoomAndPosition(bool isIPhone, int hPad, int vPad)
+    {
+        if (pluginHolder && pluginHolder->processor)
+        {
+            if (auto *ed = dynamic_cast<SurgeSynthEditor *>(pluginHolder->processor->getActiveEditor()))
+            {
+                if (auto *sge = ed->getSurgeGUIEditor())
+                {
+                    auto *storage = &(sge->synth->storage);
+                    int savedZoom = Surge::Storage::getUserDefaultValue(
+                        storage, Surge::Storage::DefaultZoom, 0);
+
+                    if (savedZoom > 0)
+                    {
+                        sge->resizeWindow(static_cast<float>(savedZoom));
+                    }
+                    else
+                    {
+                        if (isIPhone)
+                        {
+                            sge->resizeWindow(125.0f);
+                        }
+                        else
+                        {
+                            fitZoom();
+                        }
+                    }
+
+                    int sentinel = -1000004;
+                    auto savedPos = Surge::Storage::getUserDefaultValue(
+                        storage, Surge::Storage::MobileScrollPosition,
+                        std::make_pair(sentinel, sentinel));
+
+                    if (savedPos.first != sentinel && savedPos.second != sentinel)
+                    {
+                        if (scrollViewport)
+                            scrollViewport->setViewPosition(savedPos.first, savedPos.second);
+                    }
+                    else
+                    {
+                        if (scrollViewport)
+                            scrollViewport->setViewPosition(hPad, vPad);
+                    }
+                }
+            }
+        }
+    }
 
     void setupiPhoneScrollIfNeeded()
     {
@@ -482,16 +823,13 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
 
         if (isIPhone)
         {
-            // Render the UI at 125% of native size on iPhone.
-            constexpr float iPhoneZoom = 1.25f;
+            // Initial content size for iPhone
+            constexpr float initialPhoneZoom = 1.25f;
             constexpr int edgePadding = 50; // px of empty space on each side
 
-            int contentW = juce::roundToInt(surgeNativeW * iPhoneZoom);
-            int contentH = juce::roundToInt(surgeNativeH * iPhoneZoom);
+            int contentW = juce::roundToInt(surgeNativeW * initialPhoneZoom);
+            int contentH = juce::roundToInt(surgeNativeH * initialPhoneZoom);
 
-            // Resize the content to the 125% zoom dimensions.
-            // StandaloneFilterWindow's MainContentComponent propagates this size
-            // to the SurgeSynthEditor, which applies the matching zoom factor.
             content->setSize(contentW, contentH);
 
             hPad = edgePadding;
@@ -499,15 +837,8 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         }
         else
         {
-            // iPad: set content to native size (100%) now — a proper fit-width zoom is
-            // applied asynchronously below after the viewport is constructed, going through
-            // sge->resizeWindow() so that Surge's zoomFactor and the menu both stay in sync.
             content->setSize(surgeNativeW, surgeNativeH);
-
-            // Only add a top + bottom margin so that the Options / Zoom button bar
-            // (≈46 px tall) does not sit on top of the synth UI.
             constexpr int iPadVerticalMargin = 40;
-
             hPad = 0;
             vPad = iPadVerticalMargin;
         }
@@ -532,19 +863,16 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         scrollViewport->setViewPosition(hPad, vPad);
 
         // Attach our custom smart drag-to-scroll listener
-        smartDragListener = std::make_unique<SmartDragToScrollListener>(scrollViewport.get());
+        smartDragListener = std::make_unique<SmartDragToScrollListener>(this, scrollViewport.get());
         paddingWrapper->addMouseListener(smartDragListener.get(), true);
 
         setContentNonOwned(scrollViewport.get(), false);
         scrollViewport->setBounds(getLocalBounds());
 
-        if (!isIPhone)
-        {
-            // Apply the fit-width zoom through the official Surge path (sge->resizeWindow)
-            // so that zoomFactor and the menu zoom display are both correct.
-            // Deferred so the SurgeSynthEditor's active editor is accessible.
-            juce::MessageManager::callAsync([this]() { fitZoom(); });
-        }
+        // Restore saved zoom and scroll position asynchronously once the editor is ready
+        juce::MessageManager::callAsync([this, isIPhone, hPad, vPad]() {
+            restoreSavedZoomAndPosition(isIPhone, hPad, vPad);
+        });
     }
 
     void showAudioSettingsDialog()

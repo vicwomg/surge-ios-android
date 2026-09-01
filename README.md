@@ -332,9 +332,33 @@ To get started on a fresh clone:
 8. Click the `surge-xt_Standalone` target and click "Edit scheme", set the Build Configuration: "Release" (debug will work, but will be slow and garble the audio)
 9. Build with the "play" button
 
-When compiling for an iOS physical device, Surge will automatically bundle the factory data directory (`resources/data`) directly into the `.app` package.
+By default, iOS builds bundle the factory data directory (`resources/data`) directly into the `.app` package. To make a slimmer build without bundled factory presets, configure with `-DSURGE_IOS_BUNDLE_FACTORY_DATA=OFF`:
 
-To compile an .ipa file, run `./create_ipa_build.sh`
+```bash
+cmake -Bbuild_ios -GXcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DSURGE_SKIP_DISTRIBUTION=TRUE -DSURGE_IOS_BUNDLE_FACTORY_DATA=OFF
+```
+
+Slim iOS builds still expose the app's Documents folder through iOS file sharing and the Files app. To add the factory data later, copy the contents of `resources/data` into a `Surge XT` folder in the app's Documents area:
+
+```text
+Surge XT/
+  WHERE TO PLACE USER DATA.txt
+  fx_presets/
+  impulses_factory/
+  impulses_3rdparty/
+  modulator_presets/
+  patches_factory/
+  patches_3rdparty/
+  skins/
+  tuning_library/
+  wavetables/
+  wavetables_3rdparty/
+```
+
+Surge XT uses that Documents `Surge XT` folder when it exists; otherwise it falls back to the bundled `SurgeXTData` folder. The slim IPA build also removes any stale bundled `SurgeXTData` left by an earlier non-slim build.
+A slim build with neither folder can launch, but factory presets and other resources from `resources/data` will be unavailable until you add the Documents folder.
+
+To compile an .ipa file, run `./create_ipa_build.sh`. To compile a slim .ipa file, run `SURGE_IOS_BUNDLE_FACTORY_DATA=OFF ./create_ipa_build.sh`.
 
 ### Building for Raspberry Pi
 

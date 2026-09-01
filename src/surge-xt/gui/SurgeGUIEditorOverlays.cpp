@@ -112,6 +112,14 @@ std::unique_ptr<Surge::Overlays::OverlayComponent> SurgeGUIEditor::makeStorePatc
     // since it is now modal center in the window
     auto posRect = skinCtrl->getRect().withCentre(frame->getBounds().getCentre());
 
+#if (JUCE_IOS || JUCE_ANDROID)
+    // On mobile touch devices in landscape mode, position the dialog near the top
+    // with a wider width and minimal height so the on-screen keyboard doesn't obscure fields & buttons
+    int mobileW = std::min(660, frame->getBounds().getWidth() - 20);
+    int mobileH = 158;
+    posRect = juce::Rectangle<int>((frame->getBounds().getWidth() - mobileW) / 2, 8, mobileW, mobileH);
+#endif
+
     pb->setEnclosingParentTitle("Save Patch");
     pb->setEnclosingParentPosition(posRect);
     pb->setHasIndependentClose(false);
