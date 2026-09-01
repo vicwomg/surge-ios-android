@@ -129,48 +129,6 @@ class SurgeGUIEditor : public Surge::GUI::IComponentTagValue::Listener,
                        public juce::FocusChangeListener,
                        public SurgeSynthesizer::ModulationAPIListener
 {
-    class TwoFingerTapDetector : public juce::MouseListener
-    {
-        std::unique_ptr<juce::MouseEvent> lastFinger0Event;
-    public:
-        TwoFingerTapDetector() {}
-        
-        void mouseDown(const juce::MouseEvent& e) override
-        {
-            if (e.source.isTouch())
-            {
-                if (e.source.getIndex() == 0)
-                {
-                    lastFinger0Event = std::make_unique<juce::MouseEvent>(e);
-                }
-                else if (e.source.getIndex() == 1 && lastFinger0Event != nullptr)
-                {
-                    juce::MouseEvent fakeEvent(lastFinger0Event->source,
-                                               lastFinger0Event->position,
-                                               lastFinger0Event->mods.withFlags(juce::ModifierKeys::popupMenuClickModifier),
-                                               lastFinger0Event->pressure,
-                                               lastFinger0Event->orientation,
-                                               lastFinger0Event->rotation,
-                                               lastFinger0Event->tiltX,
-                                               lastFinger0Event->tiltY,
-                                               lastFinger0Event->eventComponent,
-                                               lastFinger0Event->originalComponent,
-                                               lastFinger0Event->eventTime,
-                                               lastFinger0Event->mouseDownPosition,
-                                               lastFinger0Event->mouseDownTime,
-                                               lastFinger0Event->getNumberOfClicks(),
-                                               lastFinger0Event->mouseWasDraggedSinceMouseDown());
-
-                    if (auto* comp = lastFinger0Event->eventComponent)
-                        comp->mouseDown(fakeEvent);
-                    
-                    lastFinger0Event.reset();
-                }
-            }
-        }
-    };
-    TwoFingerTapDetector twoFingerTapDetector;
-
   public:
     SurgeGUIEditor(SurgeSynthEditor *juceEditor, SurgeSynthesizer *synth);
     virtual ~SurgeGUIEditor();

@@ -192,6 +192,11 @@ struct WidgetBaseMixin : public Surge::GUI::SkinConsumingComponent,
 
     bool forwardedMainFrameMouseDowns(const juce::MouseEvent &e)
     {
+        if (Surge::GUI::getIsMultiTouchScrolling())
+        {
+            return true;
+        }
+
         if (e.mods.isMiddleButtonDown())
         {
             auto sge = firstListenerOfType<SurgeGUIEditor>();
@@ -204,6 +209,10 @@ struct WidgetBaseMixin : public Surge::GUI::SkinConsumingComponent,
 
     bool supressMainFrameMouseEvent(const juce::MouseEvent &e)
     {
+        if (Surge::GUI::getIsMultiTouchScrolling())
+        {
+            return true;
+        }
         return firstListenerOfType<SurgeGUIEditor>() && e.mods.isMiddleButtonDown();
     }
 };
@@ -223,13 +232,18 @@ template <typename T> struct LongHoldMixin
     inline T *asT() { return static_cast<T *>(this); }
 
     static constexpr uint32_t holdDelayTimeInMS = 1000;
-    static constexpr uint32_t fingerMovementTolerancePx = 8;
+    static constexpr uint32_t fingerMovementTolerancePx = 10;
 
     void onLongHoldWrapper()
     {
         if (timer)
         {
             timer->stopTimer();
+        }
+
+        if (Surge::GUI::getIsMultiTouchScrolling())
+        {
+            return;
         }
 
         onLongHold();
@@ -241,19 +255,24 @@ template <typename T> struct LongHoldMixin
         asT()->notifyControlModifierClicked(k, true);
     }
 
-    bool shouldLongHold()
+    bool shouldLongHold(const juce::MouseEvent &e)
     {
-        // return true;
+#if (JUCE_IOS || JUCE_ANDROID)
+        return true;
+#else
+        if (e.source.isTouch())
+            return true;
         if (asT()->storage)
             return GUI::isTouchMode(asT()->storage);
         return false;
+#endif
     }
 
     juce::Point<float> startingHoldPosition;
 
     virtual void mouseDownLongHold(const juce::MouseEvent &e)
     {
-        if (!shouldLongHold())
+        if (Surge::GUI::getIsMultiTouchScrolling() || !shouldLongHold(e))
         {
             return;
         }
@@ -271,7 +290,8 @@ template <typename T> struct LongHoldMixin
 
     virtual void mouseMoveLongHold(const juce::MouseEvent &e)
     {
-        if (e.position.getDistanceFrom(startingHoldPosition) > fingerMovementTolerancePx)
+        if (Surge::GUI::getIsMultiTouchScrolling() ||
+            e.position.getDistanceFrom(startingHoldPosition) > fingerMovementTolerancePx)
         {
             if (timer && timer->isTimerRunning())
             {
@@ -282,7 +302,8 @@ template <typename T> struct LongHoldMixin
 
     virtual void mouseDragLongHold(const juce::MouseEvent &e)
     {
-        if (e.position.getDistanceFrom(startingHoldPosition) > fingerMovementTolerancePx)
+        if (Surge::GUI::getIsMultiTouchScrolling() ||
+            e.position.getDistanceFrom(startingHoldPosition) > fingerMovementTolerancePx)
         {
             if (timer && timer->isTimerRunning())
             {

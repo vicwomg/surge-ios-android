@@ -61,11 +61,53 @@ void Switch::paint(juce::Graphics &g)
     }
 }
 
-void Switch::mouseUp(const juce::MouseEvent &event) { mouseUpLongHold(event); }
+void Switch::mouseUp(const juce::MouseEvent &event)
+{
+    mouseUpLongHold(event);
+
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling())
+    {
+        return;
+    }
+
+    if (event.getDistanceFromDragStart() > 10)
+    {
+        return;
+    }
+
+    if (event.source.isTouch())
+    {
+        if (isMultiIntegerValued())
+        {
+            storage->getPatch().isDirty = true;
+
+            if (event.mods.isShiftDown())
+            {
+                setValueDirection(-1);
+            }
+            else
+            {
+                setValueDirection(1);
+            }
+
+            notifyValueChangedWithBeginEnd();
+        }
+        else
+        {
+            if (!getUnValueClickable())
+            {
+                value = (value > 0.5) ? 0 : 1;
+
+                notifyValueChangedWithBeginEnd();
+            }
+        }
+        repaint();
+    }
+}
 
 void Switch::mouseDown(const juce::MouseEvent &event)
 {
-    if (forwardedMainFrameMouseDowns(event))
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
         return;
     }
@@ -77,6 +119,11 @@ void Switch::mouseDown(const juce::MouseEvent &event)
     }
 
     mouseDownLongHold(event);
+
+    if (event.source.isTouch())
+    {
+        return;
+    }
 
     if (isMultiIntegerValued())
     {

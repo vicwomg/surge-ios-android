@@ -213,6 +213,7 @@ struct SurgeMacroToJuceParamAdapter : public SurgeBaseParam
 
     const juce::NormalisableRange<float> &getNormalisableRange() const override { return range; }
     juce::NormalisableRange<float> range;
+    std::atomic<bool> inEditGesture{false};
     SurgeSynthesizer *s;
     SurgeSynthProcessor *ssp;
     long macroNum;

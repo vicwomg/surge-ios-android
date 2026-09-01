@@ -421,6 +421,16 @@ void ModulatableSlider::mouseDrag(const juce::MouseEvent &event)
 {
     if (supressMainFrameMouseEvent(event))
     {
+        if (initiatedChange)
+        {
+            value = valueOnMouseDown;
+            modValue = modValueOnMouseDown;
+            initiatedChange = false;
+            editTypeWas = NOEDIT;
+            notifyEndEdit();
+            hideInfowindowNow();
+            repaint();
+        }
         return;
     }
 
@@ -529,6 +539,23 @@ void ModulatableSlider::mouseMove(const juce::MouseEvent &event)
 
 void ModulatableSlider::mouseUp(const juce::MouseEvent &event)
 {
+    if (supressMainFrameMouseEvent(event))
+    {
+        if (initiatedChange)
+        {
+            value = valueOnMouseDown;
+            modValue = modValueOnMouseDown;
+            initiatedChange = false;
+            editTypeWas = NOEDIT;
+            notifyEndEdit();
+            hideInfowindowNow();
+            repaint();
+        }
+        hideInfowindowNow();
+        mouseUpLongHold(event);
+        return;
+    }
+
     /*
      * Why "soon" and not "now"? Well JUCE will deliver me a mouse up as first step
      * of a double click... but if ive dragged im not in a doubleclick

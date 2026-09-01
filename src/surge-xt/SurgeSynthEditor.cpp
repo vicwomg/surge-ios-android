@@ -727,33 +727,47 @@ void SurgeSynthEditor::beginParameterEdit(Parameter *p)
 {
     // std::cout << "BEGIN EDIT " << p->get_name() << std::endl;
     auto par = processor.paramsByID[processor.surge->idForParameter(p)];
-    par->inEditGesture = true;
-    par->beginChangeGesture();
+    if (par && !par->inEditGesture)
+    {
+        par->inEditGesture = true;
+        par->beginChangeGesture();
+    }
 }
 
 void SurgeSynthEditor::endParameterEdit(Parameter *p)
 {
     auto par = processor.paramsByID[processor.surge->idForParameter(p)];
-    par->inEditGesture = false;
-    par->endChangeGesture();
-    if (fireListenersOnEndEdit)
-        processor.paramChangeToListeners(p);
+    if (par && par->inEditGesture)
+    {
+        par->inEditGesture = false;
+        par->endChangeGesture();
+        if (fireListenersOnEndEdit)
+            processor.paramChangeToListeners(p);
+    }
 }
 
 void SurgeSynthEditor::beginMacroEdit(long macroNum)
 {
     auto par = processor.macrosById[macroNum];
-    par->beginChangeGesture();
+    if (par && !par->inEditGesture)
+    {
+        par->inEditGesture = true;
+        par->beginChangeGesture();
+    }
 }
 
 void SurgeSynthEditor::endMacroEdit(long macroNum)
 {
     auto par = processor.macrosById[macroNum];
-    par->endChangeGesture();
-    // echo change to OSC out
-    float newval = par->getValue();
-    processor.paramChangeToListeners(nullptr, true, processor.SCT_MACRO, (float)macroNum, newval,
-                                     .0, "");
+    if (par && par->inEditGesture)
+    {
+        par->inEditGesture = false;
+        par->endChangeGesture();
+        // echo change to OSC out
+        float newval = par->getValue();
+        processor.paramChangeToListeners(nullptr, true, processor.SCT_MACRO, (float)macroNum, newval,
+                                         .0, "");
+    }
 }
 
 #if LINUX

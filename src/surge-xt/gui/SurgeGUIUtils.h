@@ -58,6 +58,9 @@ bool getHostRequiresShowCursor();
 void setNeverMoveKeyboardFocus(bool);
 bool getNeverMoveKeyboardFocus();
 
+void setIsMultiTouchScrolling(bool);
+bool getIsMultiTouchScrolling();
+
 // Grabs keyboard focus on c unless the user asked us to never move focus. Call
 // this instead of juce::Component::grabKeyboardFocus() everywhere in the GUI.
 void grabKeyboardFocusIfAllowed(juce::Component *c);

@@ -292,8 +292,10 @@ void EffectChooser::mouseDoubleClick(const juce::MouseEvent &event)
 
 void EffectChooser::mouseDown(const juce::MouseEvent &event)
 {
-    if (forwardedMainFrameMouseDowns(event))
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
+        currentClicked = -1;
+        hasDragged = false;
         return;
     }
 
@@ -354,6 +356,13 @@ void EffectChooser::createFXMenu()
 void EffectChooser::mouseUp(const juce::MouseEvent &event)
 {
     mouseUpLongHold(event);
+
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling() || event.getDistanceFromDragStart() > 10)
+    {
+        hasDragged = false;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
 
     if (hasDragged)
     {
@@ -421,8 +430,10 @@ void EffectChooser::mouseUp(const juce::MouseEvent &event)
 
 void EffectChooser::mouseDrag(const juce::MouseEvent &event)
 {
-    if (supressMainFrameMouseEvent(event))
+    if (supressMainFrameMouseEvent(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
+        hasDragged = false;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
         return;
     }
 

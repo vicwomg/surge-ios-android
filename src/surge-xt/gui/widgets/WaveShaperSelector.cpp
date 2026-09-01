@@ -203,7 +203,7 @@ void WaveShaperSelector::mouseDoubleClick(const juce::MouseEvent &event)
 
 void WaveShaperSelector::mouseDown(const juce::MouseEvent &event)
 {
-    if (forwardedMainFrameMouseDowns(event))
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
         return;
     }
@@ -213,6 +213,11 @@ void WaveShaperSelector::mouseDown(const juce::MouseEvent &event)
     lastDragDistance = 0;
     everDragged = false;
     everMoved = false;
+
+    if (event.source.isTouch())
+    {
+        return;
+    }
 
     if (labelArea.contains(event.position.toInt()) && event.mods.isLeftButtonDown())
     {
@@ -228,7 +233,7 @@ void WaveShaperSelector::mouseDown(const juce::MouseEvent &event)
 
 void WaveShaperSelector::mouseDrag(const juce::MouseEvent &event)
 {
-    if (supressMainFrameMouseEvent(event))
+    if (supressMainFrameMouseEvent(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
         return;
     }
@@ -277,6 +282,17 @@ void WaveShaperSelector::mouseUp(const juce::MouseEvent &event)
 {
     mouseUpLongHold(event);
 
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling() || event.getDistanceFromDragStart() > 10)
+    {
+        if (everDragged)
+        {
+            notifyEndEdit();
+        }
+        everDragged = false;
+        everMoved = false;
+        return;
+    }
+
     if (everMoved)
     {
         if (!Surge::GUI::showCursor(storage))
@@ -288,6 +304,11 @@ void WaveShaperSelector::mouseUp(const juce::MouseEvent &event)
 
             juce::Desktop::getInstance().getMainMouseSource().setScreenPosition(p);
         }
+    }
+    else if (event.source.isTouch() && labelArea.contains(event.position.toInt()))
+    {
+        auto m = event.mods.withFlags(juce::ModifierKeys::popupMenuClickModifier);
+        notifyControlModifierClicked(m);
     }
 
     if (everDragged)

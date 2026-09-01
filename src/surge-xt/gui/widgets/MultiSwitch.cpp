@@ -161,6 +161,12 @@ void MultiSwitch::mouseDown(const juce::MouseEvent &event)
     }
 
     mouseDownLongHold(event);
+
+    if (event.source.isTouch())
+    {
+        return;
+    }
+
     setValue(coordinateToValue(event.x, event.y));
     notifyValueChangedWithBeginEnd();
 
@@ -248,6 +254,23 @@ void MultiSwitch::mouseUp(const juce::MouseEvent &event)
     mouseUpLongHold(event);
     isMouseDown = false;
     setMouseCursor(juce::MouseCursor::NormalCursor);
+
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling() || event.getDistanceFromDragStart() > 10)
+    {
+        return;
+    }
+
+    if (event.source.isTouch())
+    {
+        setValue(coordinateToValue(event.x, event.y));
+        notifyValueChangedWithBeginEnd();
+
+        if (isHovered)
+        {
+            hoverSelection = getIntegerValue();
+        }
+        repaint();
+    }
 
     if (storage && !Surge::GUI::showCursor(storage))
     {

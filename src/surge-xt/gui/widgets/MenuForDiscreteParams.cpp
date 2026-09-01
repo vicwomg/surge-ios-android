@@ -190,7 +190,7 @@ void MenuForDiscreteParams::paint(juce::Graphics &g)
 
 void MenuForDiscreteParams::mouseDown(const juce::MouseEvent &event)
 {
-    if (forwardedMainFrameMouseDowns(event))
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
         return;
     }
@@ -210,13 +210,24 @@ void MenuForDiscreteParams::mouseDown(const juce::MouseEvent &event)
         return;
     }
     isDraggingGlyph = false;
+
+    if (event.source.isTouch())
+    {
+        return;
+    }
+
     notifyControlModifierClicked(event.mods, true);
 }
 
 void MenuForDiscreteParams::mouseDrag(const juce::MouseEvent &event)
 {
-    if (supressMainFrameMouseEvent(event))
+    if (supressMainFrameMouseEvent(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
+        if (isDraggingGlyph)
+        {
+            notifyEndEdit();
+            isDraggingGlyph = false;
+        }
         return;
     }
 
@@ -252,6 +263,16 @@ void MenuForDiscreteParams::mouseUp(const juce::MouseEvent &event)
 {
     mouseUpLongHold(event);
 
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling() || event.getDistanceFromDragStart() > 10)
+    {
+        if (isDraggingGlyph)
+        {
+            notifyEndEdit();
+            isDraggingGlyph = false;
+        }
+        return;
+    }
+
     if (isDraggingGlyph && !Surge::GUI::showCursor(storage))
     {
         juce::Desktop::getInstance().getMainMouseSource().enableUnboundedMouseMovement(false);
@@ -259,6 +280,11 @@ void MenuForDiscreteParams::mouseUp(const juce::MouseEvent &event)
         juce::Desktop::getInstance().getMainMouseSource().setScreenPosition(p.toFloat());
         notifyEndEdit();
     }
+    else if (event.source.isTouch() && (!glyphMode || !glyphPosition.contains(event.position)))
+    {
+        notifyControlModifierClicked(event.mods, true);
+    }
+
     isDraggingGlyph = false;
 }
 

@@ -38,6 +38,9 @@ namespace Surge
 {
 namespace Widgets
 {
+struct ModulatableSlider;
+template <> void LongHoldMixin<ModulatableSlider>::onLongHold();
+
 struct ModulatableSlider : public juce::Component,
                            public WidgetBaseMixin<ModulatableSlider>,
                            public LongHoldMixin<ModulatableSlider>,
@@ -288,6 +291,20 @@ struct SelfUpdatingModulatableSlider : public ModulatableSlider,
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelfUpdatingModulatableSlider);
 };
+
+template <> inline void LongHoldMixin<ModulatableSlider>::onLongHold()
+{
+    asT()->value = asT()->valueOnMouseDown;
+    asT()->modValue = asT()->modValueOnMouseDown;
+    asT()->editTypeWas = ModulatableSlider::NOEDIT;
+    asT()->initiatedChange = false;
+    asT()->notifyEndEdit();
+    asT()->hideInfowindowNow();
+    asT()->repaint();
+
+    juce::ModifierKeys k{0};
+    asT()->notifyControlModifierClicked(k, true);
+}
 
 } // namespace Widgets
 } // namespace Surge

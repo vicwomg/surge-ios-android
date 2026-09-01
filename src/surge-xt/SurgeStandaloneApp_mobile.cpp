@@ -511,7 +511,8 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
           optionsButton("Options"),
           zoomInButton("zoom+"),
           zoomOutButton("zoom-"),
-          zoomFitButton("fit")
+          zoomFitButton("fit"),
+          helpButton("?")
     {
         juce::Component::addAndMakeVisible(&optionsButton);
         optionsButton.onClick = [this]() { showAudioSettingsDialog(); };
@@ -532,6 +533,11 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         zoomFitButton.onClick = [this]() { fitZoom(); };
         zoomFitButton.setTriggeredOnMouseDown(true);
         zoomFitButton.setAlwaysOnTop(true);
+
+        juce::Component::addAndMakeVisible(&helpButton);
+        helpButton.onClick = [this]() { showHelpDialog(); };
+        helpButton.setTriggeredOnMouseDown(true);
+        helpButton.setAlwaysOnTop(true);
 
         setupiPhoneScrollIfNeeded();
     }
@@ -653,17 +659,19 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
             juce::StandaloneFilterWindow::resized();
         }
 
-        // Layout: [Options 60] [zoom- 45] [zoom+ 45] [fit/% 55]
+        // Layout: [Options 60] [zoom- 45] [zoom+ 45] [fit 28] [? 24]
         int x = 20;
         optionsButton.setBounds(x, 12, 60, 22);  x += 60 + 10;
         zoomOutButton.setBounds(x, 12, 45, 22);  x += 45 + 5;
         zoomInButton.setBounds(x, 12, 45, 22);   x += 45 + 5;
-        zoomFitButton.setBounds(x, 12, 24, 22);
+        zoomFitButton.setBounds(x, 12, 28, 22);  x += 28 + 5;
+        helpButton.setBounds(x, 12, 24, 22);
 
         optionsButton.toFront(false);
         zoomOutButton.toFront(false);
         zoomInButton.toFront(false);
         zoomFitButton.toFront(false);
+        helpButton.toFront(false);
     }
 
   private:
@@ -696,58 +704,94 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
 
     std::unique_ptr<PaddingWrapper> paddingWrapper;
 
-    struct SmartDragToScrollListener : public juce::MouseListener
+    struct TwoFingerScrollListener : public juce::MouseListener
     {
-        StandaloneWindow *owner;
-        juce::Viewport *viewport;
-        std::map<int, juce::Point<int>> lastMousePos;
-        std::map<int, bool> isDraggingTouch;
+        StandaloneWindow *owner{nullptr};
+        juce::Viewport *viewport{nullptr};
+        std::map<int, juce::Point<float>> activeTouches;
+        juce::Point<float> lastCentroid;
+        bool isTwoFingerScrolling{false};
 
-        SmartDragToScrollListener(StandaloneWindow *w, juce::Viewport *v)
+        TwoFingerScrollListener(StandaloneWindow *w, juce::Viewport *v)
             : owner(w), viewport(v) {}
+
+        juce::Point<float> computeCentroid() const
+        {
+            if (activeTouches.empty())
+                return {};
+            float x = 0.f;
+            float y = 0.f;
+            for (const auto &[idx, pt] : activeTouches)
+            {
+                x += pt.x;
+                y += pt.y;
+            }
+            return {x / static_cast<float>(activeTouches.size()),
+                    y / static_cast<float>(activeTouches.size())};
+        }
+
+        bool wasMultiTouchGesture{false};
 
         void mouseDown(const juce::MouseEvent &e) override
         {
-            if (e.originalComponent == nullptr) return;
+            auto pos = e.getScreenPosition().toFloat();
+            activeTouches[e.source.getIndex()] = pos;
 
-            // In Surge, the empty background is drawn by a single "MainFrame" component.
-            // Empty margins outside the synth are handled by our "PaddingWrapper".
-            // If the user clicks on anything else, it's an interactive control (slider, etc.)
-            juce::String typeName = typeid(*(e.originalComponent)).name();
-            bool isBackground = typeName.containsIgnoreCase("MainFrame") ||
-                                typeName.containsIgnoreCase("PaddingWrapper");
-
-            isDraggingTouch[e.source.getIndex()] = isBackground;
-            lastMousePos[e.source.getIndex()] = e.getScreenPosition();
+            if (activeTouches.size() >= 2)
+            {
+                wasMultiTouchGesture = true;
+                Surge::GUI::setIsMultiTouchScrolling(true);
+                juce::PopupMenu::dismissAllActiveMenus();
+                lastCentroid = computeCentroid();
+                isTwoFingerScrolling = true;
+            }
         }
 
         void mouseDrag(const juce::MouseEvent &e) override
         {
-            if (isDraggingTouch[e.source.getIndex()])
-            {
-                auto currentPos = e.getScreenPosition();
-                auto delta = currentPos - lastMousePos[e.source.getIndex()];
-                lastMousePos[e.source.getIndex()] = currentPos;
+            auto pos = e.getScreenPosition().toFloat();
+            activeTouches[e.source.getIndex()] = pos;
 
-                auto pos = viewport->getViewPosition();
-                viewport->setViewPosition(pos.x - delta.x, pos.y - delta.y);
+            if (activeTouches.size() >= 2 && viewport != nullptr)
+            {
+                wasMultiTouchGesture = true;
+                Surge::GUI::setIsMultiTouchScrolling(true);
+                juce::PopupMenu::dismissAllActiveMenus();
+                auto currentCentroid = computeCentroid();
+                if (isTwoFingerScrolling)
+                {
+                    auto delta = currentCentroid - lastCentroid;
+                    auto viewPos = viewport->getViewPosition();
+                    viewport->setViewPosition(
+                        viewPos.x - juce::roundToInt(delta.x),
+                        viewPos.y - juce::roundToInt(delta.y));
+                }
+                lastCentroid = currentCentroid;
+                isTwoFingerScrolling = true;
             }
         }
 
         void mouseUp(const juce::MouseEvent &e) override
         {
-            if (isDraggingTouch[e.source.getIndex()])
+            activeTouches.erase(e.source.getIndex());
+
+            if (activeTouches.size() >= 2)
             {
-                if (owner)
-                    owner->saveScrollPosition();
+                lastCentroid = computeCentroid();
             }
-            isDraggingTouch.erase(e.source.getIndex());
-            lastMousePos.erase(e.source.getIndex());
+            else if (activeTouches.empty())
+            {
+                if (isTwoFingerScrolling && owner)
+                    owner->saveScrollPosition();
+                isTwoFingerScrolling = false;
+                wasMultiTouchGesture = false;
+                Surge::GUI::setIsMultiTouchScrolling(false);
+            }
         }
     };
 
     std::unique_ptr<juce::Viewport> scrollViewport;
-    std::unique_ptr<SmartDragToScrollListener> smartDragListener;
+    std::unique_ptr<TwoFingerScrollListener> smartDragListener;
 
     void restoreSavedZoomAndPosition(bool isIPhone, int hPad, int vPad)
     {
@@ -862,8 +906,8 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         // Scroll the viewport so the top-left of the content (minus padding) is visible.
         scrollViewport->setViewPosition(hPad, vPad);
 
-        // Attach our custom smart drag-to-scroll listener
-        smartDragListener = std::make_unique<SmartDragToScrollListener>(this, scrollViewport.get());
+        // Attach our custom two-finger drag-to-scroll listener
+        smartDragListener = std::make_unique<TwoFingerScrollListener>(this, scrollViewport.get());
         paddingWrapper->addMouseListener(smartDragListener.get(), true);
 
         setContentNonOwned(scrollViewport.get(), false);
@@ -912,10 +956,28 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         options.launchAsync();
     }
 
+    void showHelpDialog()
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::NoIcon,
+            "Surge XT Mobile Gestures",
+            juce::String::fromUTF8(
+                "- Two-Finger Scroll / Pan:\n"
+                "Swipe anywhere on the screen with two fingers to scroll and pan the synthesizer interface.\n\n"
+                "- Right-Click / Context Menu:\n"
+                "Long-press (hold still for ~0.75s) with a single finger on any slider, knob, or button to open its context menu.\n\n"
+                "- Single-Finger Controls:\n"
+                "Tap or drag controls directly with a single finger.\n\n"
+                "- Zoom Controls:\n"
+                "Use [+] and [-] to zoom in/out, or [fit] to fit the synthesizer interface to your screen width."),
+            "OK");
+    }
+
     juce::TextButton optionsButton;
     juce::TextButton zoomInButton;
     juce::TextButton zoomOutButton;
     juce::TextButton zoomFitButton;
+    juce::TextButton helpButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StandaloneWindow)
 };

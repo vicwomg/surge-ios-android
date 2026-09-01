@@ -75,6 +75,10 @@ static bool isStandalone{false};
 void setIsStandalone(bool b) { isStandalone = b; }
 bool getIsStandalone() { return isStandalone; }
 
+static std::atomic<bool> isMultiTouchScrollingActive{false};
+void setIsMultiTouchScrolling(bool b) { isMultiTouchScrollingActive.store(b); }
+bool getIsMultiTouchScrolling() { return isMultiTouchScrollingActive.load(); }
+
 bool allowKeyboardEdits(SurgeStorage *storage)
 {
     if (!storage)

@@ -459,8 +459,9 @@ void ModulationSourceButton::buildHamburgerMenu(juce::PopupMenu &menu,
 
 void ModulationSourceButton::mouseDown(const juce::MouseEvent &event)
 {
-    if (forwardedMainFrameMouseDowns(event))
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling())
     {
+        mouseMode = NONE;
         return;
     }
 
@@ -671,6 +672,12 @@ void ModulationSourceButton::mouseUp(const juce::MouseEvent &event)
 
     transientArmed = false;
 
+    if (forwardedMainFrameMouseDowns(event) || Surge::GUI::getIsMultiTouchScrolling() || event.getDistanceFromDragStart() > 10)
+    {
+        mouseMode = NONE;
+        return;
+    }
+
     if (mouseMode == CLICK || mouseMode == CLICK_ARROW || mouseMode == CTRL_CLICK)
     {
         notifyValueChanged();
@@ -722,6 +729,18 @@ void ModulationSourceButton::mouseUp(const juce::MouseEvent &event)
 
 void ModulationSourceButton::mouseDrag(const juce::MouseEvent &event)
 {
+    if (supressMainFrameMouseEvent(event) || Surge::GUI::getIsMultiTouchScrolling())
+    {
+        if (mouseMode == DRAG_COMPONENT_HAPPEN)
+        {
+            setBounds(mouseDownBounds);
+            setAlpha(1.0);
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+        }
+        mouseMode = NONE;
+        return;
+    }
+
     if (mouseMode == NONE)
     {
         return;

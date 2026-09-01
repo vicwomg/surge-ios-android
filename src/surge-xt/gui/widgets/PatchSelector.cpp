@@ -477,6 +477,11 @@ void PatchSelector::mouseMove(const juce::MouseEvent &e)
 
 void PatchSelector::mouseDown(const juce::MouseEvent &e)
 {
+    if (forwardedMainFrameMouseDowns(e) || Surge::GUI::getIsMultiTouchScrolling())
+    {
+        return;
+    }
+
     if (e.mods.isMiddleButtonDown())
     {
         notifyControlModifierClicked(e.mods);
