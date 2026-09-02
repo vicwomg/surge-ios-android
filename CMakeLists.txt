@@ -38,6 +38,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
   set(SURGE_COPY_TO_PRODUCTS OFF CACHE BOOL "Copy built plugins to the products directory" FORCE)
   set(SURGE_COPY_AFTER_BUILD OFF CACHE BOOL "Copy JUCE plugins to system plugin area after build" FORCE)
   set(SURGE_SKIP_WERROR ON CACHE BOOL "Skip warnings as errors on Android" FORCE)
+
+  # Aggressive optimization flags for Android Release builds
+  add_compile_options(
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:Release>:-fomit-frame-pointer>
+    $<$<CONFIG:Release>:-flto>
+  )
+  add_link_options(
+    $<$<CONFIG:Release>:-flto>
+  )
 endif()
 cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

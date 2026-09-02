@@ -68,6 +68,27 @@ namespace mech = sst::basic_blocks::mechanics;
 
 using namespace std;
 
+#if defined(__ANDROID__)
+namespace
+{
+fs::path getAndroidInternalFilesPath()
+{
+    if (auto *home = std::getenv("HOME"); home && home[0])
+        return fs::path{home};
+
+    return fs::temp_directory_path();
+}
+
+fs::path getAndroidExternalFilesPath()
+{
+    if (auto *extEnv = std::getenv("SURGE_EXTERNAL_DIR"); extEnv && extEnv[0])
+        return fs::path{extEnv};
+
+    return getAndroidInternalFilesPath();
+}
+} // namespace
+#endif
+
 std::string SurgeStorage::skipPatchLoadDataPathSentinel = "<SKIP-PATCH-SENTINEL>";
 
 SurgeStorage::SurgeStorage(const SurgeStorage::SurgeStorageConfig &config) : otherscene_clients(0)
@@ -194,13 +215,7 @@ SurgeStorage::SurgeStorage(const SurgeStorage::SurgeStorageConfig &config) : oth
     std::string sxtlower = "surge-xt";
 
 #if defined(__ANDROID__)
-    auto androidFilesPath = []() -> fs::path {
-        if (auto *home = std::getenv("HOME"); home && home[0])
-            return fs::path{home};
-
-        return fs::temp_directory_path();
-    }();
-
+    auto androidFilesPath = getAndroidInternalFilesPath();
     localAppDataPath = androidFilesPath / ".local" / "share" / "Surge Synth Team" / "Surge XT";
 #elif MAC && (TARGET_OS_IPHONE || TARGET_OS_IOS)
     // iOS does not expose the macOS-style Application Support locations in the way Surge expects.
@@ -274,7 +289,7 @@ SurgeStorage::SurgeStorage(const SurgeStorage::SurgeStorageConfig &config) : oth
 
     if (userDataPath.empty())
     {
-        userDataPath = androidFilesPath / ".Surge Synth Team" / sxt;
+        userDataPath = getAndroidExternalFilesPath() / sxt;
     }
 #elif LINUX
     const auto installPath = sst::plugininfra::paths::sharedLibraryBinaryPath().parent_path();
@@ -710,9 +725,32 @@ void SurgeStorage::createUserDirectory()
         }
         catch (const fs::filesystem_error &e)
         {
+#if defined(__ANDROID__)
+            // If Documents/Surge XT failed (e.g. storage permission not yet granted),
+            // fall back to internal app storage so Surge continues to run without error.
+            try
+            {
+                auto fallback = getAndroidInternalFilesPath() / ".Surge Synth Team" / "Surge XT";
+                userDataPath = fallback;
+                initializeUserDataPaths();
+                for (auto &s :
+                     {userDataPath, userDefaultFilePath, userPatchesPath, userWavetablesPath,
+                      userModulatorSettingsPath, userFXPath, userFXChainPath, userWavetablesExportPath,
+                      userWavetableScriptsPath, userSkinsPath, userMidiMappingsPath})
+                    fs::create_directories(s);
+                userDataPathValid = true;
+            }
+            catch (...)
+            {
+                reportError(fmt::format("User directory is non-writable.\n\n{}", e.what()),
+                            "Filesystem Error");
+                userDataPathValid = false;
+            }
+#else
             reportError(fmt::format("User directory is non-writable.\n\n{}", e.what()),
                         "Filesystem Error");
             userDataPathValid = false;
+#endif
         }
     }
 

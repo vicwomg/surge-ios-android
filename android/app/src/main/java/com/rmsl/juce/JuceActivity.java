@@ -39,16 +39,43 @@ import static android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
 import static android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.content.Intent;
+import android.os.PowerManager;
 import android.view.View;
+import java.io.File;
 
 //==============================================================================
 public class JuceActivity   extends Activity
 {
     private native void appNewIntent (Intent intent);
     private native void appOnResume();
+
+    private void setupDirectories()
+    {
+        try {
+            // Internal files directory holds factory assets (SurgeXTData)
+            android.system.Os.setenv("HOME", getFilesDir().getAbsolutePath(), true);
+
+            // App-specific external storage holds user data (Surge XT/Patches/...)
+            File extDir = getExternalFilesDir(null);
+            if (extDir != null)
+            {
+                if (!extDir.exists())
+                    extDir.mkdirs();
+
+                File surgeExt = new File(extDir, "Surge XT");
+                if (!surgeExt.exists())
+                    surgeExt.mkdirs();
+
+                android.system.Os.setenv("SURGE_EXTERNAL_DIR", extDir.getAbsolutePath(), true);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     private void initEdgeToEdge()
     {
@@ -80,14 +107,19 @@ public class JuceActivity   extends Activity
     @Override
     protected void onCreate (Bundle savedInstanceState)
     {
-        try {
-            android.system.Os.setenv("HOME", getFilesDir().getAbsolutePath(), true);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        setupDirectories();
 
         Java.initialiseJUCE (getApplicationContext());
         initEdgeToEdge();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+        {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && pm.isSustainedPerformanceModeSupported())
+            {
+                getWindow().setSustainedPerformanceMode(true);
+            }
+        }
 
         super.onCreate (savedInstanceState);
     }
@@ -105,6 +137,7 @@ public class JuceActivity   extends Activity
     protected void onResume()
     {
         super.onResume();
+        setupDirectories();
         appOnResume();
     }
 }

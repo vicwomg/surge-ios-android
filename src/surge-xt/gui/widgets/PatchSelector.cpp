@@ -521,6 +521,83 @@ void PatchSelector::openPatchBrowser()
         sge->showOverlay(SurgeGUIEditor::PATCH_BROWSER);
     }
 }
+
+#if JUCE_ANDROID
+static std::vector<std::string> resolveAndImportPatchFiles(const juce::FileChooser &c,
+                                                           const fs::path &targetDirectory)
+{
+    std::vector<std::string> results;
+    auto urls = c.getURLResults();
+
+    for (const auto &url : urls)
+    {
+        if (url.isLocalFile())
+        {
+            results.push_back(url.getLocalFile().getFullPathName().toStdString());
+        }
+        else
+        {
+            auto doc = juce::AndroidDocument::fromDocument(url);
+            std::unique_ptr<juce::InputStream> stream;
+            juce::String fileName;
+
+            if (doc.hasValue())
+            {
+                auto info = doc.getInfo();
+                fileName = info.getName();
+                stream = doc.createInputStream();
+            }
+
+            if (stream == nullptr)
+            {
+                stream = url.createInputStream(juce::URL::InputStreamOptions(
+                    juce::URL::ParameterHandling::inAddress));
+            }
+
+            if (fileName.isEmpty())
+            {
+                fileName = url.getFileName();
+            }
+
+            if (fileName.isEmpty())
+            {
+                fileName = "imported_patch.fxp";
+            }
+            else if (!fileName.endsWithIgnoreCase(".fxp"))
+            {
+                fileName += ".fxp";
+            }
+
+            if (stream != nullptr)
+            {
+                std::error_code ec;
+                fs::create_directories(targetDirectory, ec);
+
+                auto destFile = juce::File(path_to_string(targetDirectory / fileName.toStdString()));
+                destFile.deleteFile();
+                auto outStream = destFile.createOutputStream();
+                if (outStream != nullptr)
+                {
+                    outStream->writeFromInputStream(*stream, -1);
+                    outStream->flush();
+                    results.push_back(destFile.getFullPathName().toStdString());
+                }
+            }
+        }
+    }
+
+    if (results.empty())
+    {
+        for (const auto &res : c.getResults())
+        {
+            results.push_back(res.getFullPathName().toStdString());
+        }
+    }
+
+    return results;
+}
+#endif
+
 void PatchSelector::showClassicMenu(bool single_category, bool userOnly)
 {
     auto contextMenu = juce::PopupMenu();
@@ -705,9 +782,23 @@ void PatchSelector::showClassicMenu(bool single_category, bool userOnly)
                 "Select Patch to Load", juce::File(path_to_string(patchPath)), "*.fxp");
 
             sge->fileChooser->launchAsync(
-                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+#if JUCE_ANDROID
+                    | juce::FileBrowserComponent::canSelectMultipleItems
+#endif
+                ,
                 [this, patchPath, sge](const juce::FileChooser &c) {
                     sge->undoManager()->pushPatch();
+#if JUCE_ANDROID
+                    auto destDir = storage->userPatchesPath / "Imported";
+                    auto files = resolveAndImportPatchFiles(c, destDir);
+                    if (files.empty())
+                        return;
+
+                    std::cout << "queuePatchFileLoad: " << files.front() << std::endl;
+                    sge->queuePatchFileLoad(files.front());
+                    sge->rescanAllDataFolders();
+#else
                     auto ress = c.getResults();
                     if (ress.size() != 1)
                         return;
@@ -726,8 +817,32 @@ void PatchSelector::showClassicMenu(bool single_category, bool userOnly)
                         Surge::Storage::updateUserDefaultPath(storage,
                                                               Surge::Storage::LastPatchPath, dir);
                     }
+#endif
                 });
         });
+
+#if JUCE_ANDROID
+        contextMenu.addItem(Surge::GUI::toOSCase("Import Patches to MIDI Programs..."), [this, sge]() {
+            auto patchPath = storage->userPatchesMidiProgramChangePath;
+
+            sge->fileChooser = std::make_unique<juce::FileChooser>(
+                "Select MIDI Program Patches", juce::File(path_to_string(patchPath)), "*.fxp");
+
+            sge->fileChooser->launchAsync(
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
+                    juce::FileBrowserComponent::canSelectMultipleItems,
+                [this, sge](const juce::FileChooser &c) {
+                    auto destDir = storage->userPatchesMidiProgramChangePath;
+                    auto files = resolveAndImportPatchFiles(c, destDir);
+                    if (files.empty())
+                        return;
+
+                    std::cout << "queuePatchFileLoad (MIDI Program): " << files.front() << std::endl;
+                    sge->queuePatchFileLoad(files.front());
+                    sge->rescanAllDataFolders();
+                });
+        });
+#endif
 
         contextMenu.addSeparator();
 

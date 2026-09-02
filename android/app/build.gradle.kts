@@ -108,6 +108,11 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
+            externalNativeBuild {
+                cmake {
+                    cppFlags("-O3", "-fomit-frame-pointer", "-flto")
+                }
+            }
         }
     }
     compileOptions {
