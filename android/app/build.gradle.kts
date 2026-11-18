@@ -110,6 +110,11 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             externalNativeBuild {
                 cmake {
+                    // Gradle defaults release builds to RelWithDebInfo, whose -O2 comes after
+                    // (and overrides) the -O3 below. Build as Release so the DSP is fully optimized.
+                    // CMake's own LTO switch adds -fuse-ld=gold, which the NDK no longer ships;
+                    // -flto below already gives LTO through the default lld linker.
+                    arguments("-DCMAKE_BUILD_TYPE=Release", "-DENABLE_LTO=OFF")
                     cppFlags("-O3", "-fomit-frame-pointer", "-flto")
                 }
             }

@@ -241,6 +241,10 @@ class SurgeGUIEditor : public Surge::GUI::IComponentTagValue::Listener,
     int current_scene = 0, current_osc[n_scenes] = {0, 0}, current_fx = 0;
 
     int getCurrentScene() { return current_scene; }
+
+    // Used by the effect chooser and by the mobile performance view
+    void setFXDeactivatedBitmask(int bitmask);
+    void selectScene(int scene) { changeSelectedScene(scene); }
     int getCurrentLFOIDInEditor()
     {
         auto lfo_id = modsource_editor[current_scene] - ms_lfo1;

@@ -277,7 +277,12 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
   if(TARGET ${PROJECT_NAME}_Standalone)
-    target_sources(${PROJECT_NAME}_Standalone PRIVATE SurgeStandaloneApp_mobile.cpp)
+    target_sources(${PROJECT_NAME}_Standalone PRIVATE
+      SurgeStandaloneApp_mobile.cpp
+      gui/mobile/PerformanceView.cpp
+      gui/mobile/PerformancePatchBrowser.cpp
+      gui/mobile/PerformanceSaveDialog.cpp
+    )
     target_compile_definitions(${PROJECT_NAME}_Standalone PRIVATE JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
   endif()
 

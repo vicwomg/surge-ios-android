@@ -188,6 +188,7 @@ enum DefaultKey
 
     // Mobile settings
     MobileScrollPosition,
+    MobilePerformanceMode,
 
     nKeys
 };

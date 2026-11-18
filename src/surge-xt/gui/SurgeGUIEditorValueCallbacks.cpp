@@ -411,6 +411,26 @@ void SurgeGUIEditor::changeSelectedOsc(int value)
     queue_refresh = true;
 }
 
+void SurgeGUIEditor::setFXDeactivatedBitmask(int d)
+{
+    int cur_bitmask = synth->storage.getPatch().fx_disable.val.i;
+    synth->fx_suspend_bitmask = cur_bitmask ^ d;
+
+    if (d != cur_bitmask)
+    {
+        juceEditor->processor.paramChangeToListeners(nullptr, true,
+                                                     juceEditor->processor.SCT_FX_DEACT,
+                                                     (float)cur_bitmask, (float)d, .0, "");
+    }
+
+    synth->storage.getPatch().fx_disable.val.i = d;
+
+    if (effectChooser)
+    {
+        effectChooser->setDeactivatedBitmask(d);
+    }
+}
+
 void SurgeGUIEditor::changeSelectedScene(int value)
 {
     current_scene = value;
@@ -3966,19 +3986,7 @@ void SurgeGUIEditor::valueChanged(Surge::GUI::IComponentTagValue *control)
         if (!fxc)
             return;
 
-        int cur_bitmask = synth->storage.getPatch().fx_disable.val.i;
-        int d = fxc->getDeactivatedBitmask();
-        synth->fx_suspend_bitmask = cur_bitmask ^ d;
-
-        if (d != cur_bitmask)
-        {
-            juceEditor->processor.paramChangeToListeners(nullptr, true,
-                                                         juceEditor->processor.SCT_FX_DEACT,
-                                                         (float)cur_bitmask, (float)d, .0, "");
-        }
-
-        synth->storage.getPatch().fx_disable.val.i = d;
-        fxc->setDeactivatedBitmask(d);
+        setFXDeactivatedBitmask(fxc->getDeactivatedBitmask());
 
         int nfx = fxc->getCurrentEffect();
         if (current_fx != nfx)
