@@ -37,6 +37,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
+#include <fstream>
 
 #include "UserDefaults.h"
 #include "version.h"
@@ -85,6 +86,74 @@ fs::path getAndroidExternalFilesPath()
         return fs::path{extEnv};
 
     return getAndroidInternalFilesPath();
+}
+
+// Before user data moved to app-specific external storage, it lived in internal storage.
+fs::path getAndroidLegacyUserDataPath()
+{
+    return getAndroidInternalFilesPath() / ".Surge Synth Team" / "Surge XT";
+}
+
+/*
+ * One-time copy of user data (patches, MIDI program patches, favorites, settings, ...) from
+ * the legacy internal location to the current one. The legacy copy is left in place.
+ * Settings and the patch database are overwritten, since a launch after upgrading will
+ * already have created fresh empty ones; everything else is only copied if not already
+ * present so nothing created since the upgrade is lost.
+ */
+void migrateLegacyAndroidUserData(const fs::path &target)
+{
+    auto legacy = getAndroidLegacyUserDataPath();
+    auto marker = target / ".migrated-from-internal-storage";
+    std::error_code ec;
+
+    if (!fs::is_directory(legacy, ec) || fs::exists(marker, ec) ||
+        fs::equivalent(legacy, target, ec))
+        return;
+
+    fs::create_directories(target, ec);
+    if (ec)
+        return;
+
+    auto isStateFile = [](const fs::path &rel) {
+        auto s = rel.u8string();
+        return s == "SurgeXTUserDefaults.xml" || s == "SurgePatches.db";
+    };
+
+    // Drop journals belonging to a freshly created database before replacing it
+    if (fs::exists(legacy / "SurgePatches.db", ec))
+        for (auto sfx : {"-wal", "-shm", "-journal"})
+            fs::remove(target / (std::string("SurgePatches.db") + sfx), ec);
+
+    bool ok = true;
+    for (auto it = fs::recursive_directory_iterator(legacy, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+    {
+        std::error_code fec;
+        auto rel = fs::relative(it->path(), legacy, fec);
+        if (fec)
+        {
+            ok = false;
+            continue;
+        }
+        auto dest = target / rel;
+
+        if (it->is_directory(fec))
+            fs::create_directories(dest, fec);
+        else if (it->is_regular_file(fec))
+            fs::copy_file(it->path(), dest,
+                          isStateFile(rel) ? fs::copy_options::overwrite_existing
+                                           : fs::copy_options::skip_existing,
+                          fec);
+        if (fec)
+            ok = false;
+    }
+
+    if (ec)
+        ok = false;
+
+    if (ok)
+        std::ofstream(marker.native()) << "migrated from " << legacy.u8string() << "\n";
 }
 } // namespace
 #endif
@@ -290,6 +359,7 @@ SurgeStorage::SurgeStorage(const SurgeStorage::SurgeStorageConfig &config) : oth
     if (userDataPath.empty())
     {
         userDataPath = getAndroidExternalFilesPath() / sxt;
+        migrateLegacyAndroidUserData(userDataPath);
     }
 #elif LINUX
     const auto installPath = sst::plugininfra::paths::sharedLibraryBinaryPath().parent_path();
@@ -1068,8 +1138,17 @@ void SurgeStorage::refresh_patchlist()
         return "";
     };
     std::unordered_set<std::string> favSet, favTruncSet;
+#if defined(__ANDROID__)
+    // Favorites saved before user data moved still point at the old user patch location
+    auto legacyUserPatches = (getAndroidLegacyUserDataPath() / "Patches").u8string();
+    auto currentUserPatches = userPatchesPath.u8string();
+#endif
     for (auto f : favorites)
     {
+#if defined(__ANDROID__)
+        if (legacyUserPatches != currentUserPatches && f.rfind(legacyUserPatches, 0) == 0)
+            f = currentUserPatches + f.substr(legacyUserPatches.size());
+#endif
         favSet.insert(f);
         auto pf = pathToTrunc(f);
         if (!pf.empty())

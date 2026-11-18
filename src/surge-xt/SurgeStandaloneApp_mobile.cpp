@@ -37,6 +37,8 @@
 
 #include "SurgeSynthEditor.h"
 #include "gui/SurgeGUIEditor.h"
+#include "gui/mobile/PerformanceView.h"
+#include "gui/mobile/HelpOverlay.h"
 
 namespace Surge
 {
@@ -475,6 +477,15 @@ class AudioSettingsComponent final : public juce::Component
         setSize(getWidth(), deviceSelector.getHeight() + extraHeight + closeAreaHeight);
     }
 
+    ~AudioSettingsComponent() override
+    {
+        // JUCE only saves the audio setup on a clean shutdown, which mobile apps rarely get,
+        // so write it out as soon as the settings are closed.
+        owner.saveAudioDeviceState();
+        if (auto *props = dynamic_cast<juce::PropertiesFile *>(owner.settings.get()))
+            props->saveIfNeeded();
+    }
+
   private:
     static constexpr int closeAreaHeight = 50;
 
@@ -512,6 +523,7 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
           zoomInButton("zoom+"),
           zoomOutButton("zoom-"),
           zoomFitButton("fit"),
+          performButton("perform"),
           helpButton("?")
     {
         juce::Component::addAndMakeVisible(&optionsButton);
@@ -534,12 +546,18 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         zoomFitButton.setTriggeredOnMouseDown(true);
         zoomFitButton.setAlwaysOnTop(true);
 
+        juce::Component::addAndMakeVisible(&performButton);
+        performButton.onClick = [this]() { setPerformanceMode(true); };
+        performButton.setTriggeredOnMouseDown(true);
+        performButton.setAlwaysOnTop(true);
+
         juce::Component::addAndMakeVisible(&helpButton);
         helpButton.onClick = [this]() { showHelpDialog(); };
         helpButton.setTriggeredOnMouseDown(true);
         helpButton.setAlwaysOnTop(true);
 
         setupiPhoneScrollIfNeeded();
+        setupPerformanceView();
     }
 
     ~StandaloneWindow() override
@@ -646,6 +664,55 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         }
     }
 
+    SurgeSynthEditor *getSurgeEditor() const
+    {
+        if (pluginHolder && pluginHolder->processor)
+            return dynamic_cast<SurgeSynthEditor *>(pluginHolder->processor->getActiveEditor());
+        return nullptr;
+    }
+
+    // Switches between the full Surge editor and the touch-first Perform view.
+    void setPerformanceMode(bool on, bool persist = true)
+    {
+        if (!performanceView)
+            return;
+
+        performanceMode = on;
+
+        for (auto *b : {&optionsButton, &zoomOutButton, &zoomInButton, &zoomFitButton,
+                        &performButton, &helpButton})
+            b->setVisible(!on);
+
+        if (scrollViewport)
+            scrollViewport->setVisible(!on);
+        else if (auto *c = getContentComponent())
+            c->setVisible(!on);
+
+        performanceView->setVisible(on);
+        performanceView->setActive(on);
+
+        if (on)
+        {
+            juce::PopupMenu::dismissAllActiveMenus();
+            performanceView->toFront(false);
+        }
+        else
+        {
+            saveScrollPosition();
+        }
+
+        resized();
+
+        if (persist)
+        {
+            if (auto *ed = getSurgeEditor())
+                if (auto *sge = ed->getSurgeGUIEditor())
+                    Surge::Storage::updateUserDefaultValue(&(sge->synth->storage),
+                                                           Surge::Storage::MobilePerformanceMode,
+                                                           on ? 1 : 0);
+        }
+    }
+
     void resized() override
     {
         if (scrollViewport != nullptr)
@@ -659,18 +726,38 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
             juce::StandaloneFilterWindow::resized();
         }
 
-        // Layout: [Options 60] [zoom- 45] [zoom+ 45] [fit 28] [? 24]
+        layoutHelpOverlay();
+
+        if (performanceView)
+        {
+            // Keep the perform view clear of notches / rounded corners
+            auto area = getLocalBounds();
+            if (auto *d = juce::Desktop::getInstance().getDisplays().getDisplayForRect(
+                    getScreenBounds()))
+                area = d->safeAreaInsets.subtractedFrom(area);
+            performanceView->setBounds(area);
+
+            if (performanceMode)
+            {
+                performanceView->toFront(false);
+                return;
+            }
+        }
+
+        // Layout: [Options 60] [zoom- 45] [zoom+ 45] [fit 28] [perform 56] [? 24]
         int x = 20;
         optionsButton.setBounds(x, 12, 60, 22);  x += 60 + 10;
         zoomOutButton.setBounds(x, 12, 45, 22);  x += 45 + 5;
         zoomInButton.setBounds(x, 12, 45, 22);   x += 45 + 5;
         zoomFitButton.setBounds(x, 12, 28, 22);  x += 28 + 5;
+        performButton.setBounds(x, 12, 56, 22);  x += 56 + 5;
         helpButton.setBounds(x, 12, 24, 22);
 
         optionsButton.toFront(false);
         zoomOutButton.toFront(false);
         zoomInButton.toFront(false);
         zoomFitButton.toFront(false);
+        performButton.toFront(false);
         helpButton.toFront(false);
     }
 
@@ -703,6 +790,34 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
     };
 
     std::unique_ptr<PaddingWrapper> paddingWrapper;
+
+    std::unique_ptr<Surge::Mobile::PerformanceView> performanceView;
+    bool performanceMode{false};
+
+    void setupPerformanceView()
+    {
+        performanceView = std::make_unique<Surge::Mobile::PerformanceView>(
+            [this]() { return getSurgeEditor(); });
+        performanceView->onExitRequested = [this]() { setPerformanceMode(false); };
+        performanceView->onOptionsRequested = [this]() { showAudioSettingsDialog(); };
+        performanceView->onHelpRequested = [this]() { showHelpDialog(); };
+        juce::Component::addChildComponent(performanceView.get());
+        resized();
+    }
+
+    void restoreSavedPerformanceMode()
+    {
+        if (auto *ed = getSurgeEditor())
+        {
+            if (auto *sge = ed->getSurgeGUIEditor())
+            {
+                bool on = Surge::Storage::getUserDefaultValue(
+                              &(sge->synth->storage), Surge::Storage::MobilePerformanceMode, 0) != 0;
+                if (on)
+                    setPerformanceMode(true, /*persist=*/false);
+            }
+        }
+    }
 
     struct TwoFingerScrollListener : public juce::MouseListener
     {
@@ -916,6 +1031,7 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
         // Restore saved zoom and scroll position asynchronously once the editor is ready
         juce::MessageManager::callAsync([this, isIPhone, hPad, vPad]() {
             restoreSavedZoomAndPosition(isIPhone, hPad, vPad);
+            restoreSavedPerformanceMode();
         });
     }
 
@@ -958,25 +1074,58 @@ class StandaloneWindow final : public juce::StandaloneFilterWindow
 
     void showHelpDialog()
     {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::NoIcon,
-            "Surge XT Mobile Gestures",
-            juce::String::fromUTF8(
-                "- Two-Finger Scroll / Pan:\n"
-                "Swipe anywhere on the screen with two fingers to scroll and pan the synthesizer interface.\n\n"
-                "- Right-Click / Context Menu:\n"
-                "Long-press (hold still for ~0.75s) with a single finger on any slider, knob, or button to open its context menu.\n\n"
-                "- Single-Finger Controls:\n"
-                "Tap or drag controls directly with a single finger.\n\n"
-                "- Zoom Controls:\n"
-                "Use [+] and [-] to zoom in/out, or [fit] to fit the synthesizer interface to your screen width."),
-            "OK");
+        if (!helpOverlay)
+        {
+            using S = Surge::Mobile::HelpOverlay::Section;
+            helpOverlay = std::make_unique<Surge::Mobile::HelpOverlay>(
+                "Surge XT Mobile Help",
+                std::vector<S>{
+                    {"Two-Finger Scroll / Pan",
+                     "Swipe anywhere with two fingers to scroll and pan the synthesizer interface."},
+                    {"Right-Click / Context Menu",
+                     "Long-press (hold still for ~0.75s) on any slider, knob, or button to open its "
+                     "context menu."},
+                    {"Single-Finger Controls", "Tap or drag controls directly with one finger."},
+                    {"Zoom Controls",
+                     "Use [+] and [-] to zoom in/out, or [fit] to fit the interface to your screen "
+                     "width."},
+                    {"Perform Mode",
+                     "Tap [perform] for a full-screen, touch-friendly view with a patch browser, "
+                     "volume, scene, filter, envelope, FX and macro controls. Tap the "
+                     "two-arrow button at the top left to return to the full editor. If audio "
+                     "crackles, lower Voices in the MISC panel."},
+                    {"Perform Mode Patches",
+                     "On smaller screens, tap the patch name to open or close the patch browser. "
+                     "The dice loads a random patch from the whole library, and the disk button "
+                     "saves the patch. In the browser, the filled star jumps to your "
+                     "favorites. Loading patches from Perform mode does not ask about unsaved "
+                     "changes."},
+                });
+            helpOverlay->setAlwaysOnTop(true);
+            juce::Component::addChildComponent(helpOverlay.get());
+        }
+        layoutHelpOverlay();
+        helpOverlay->show();
     }
+
+    void layoutHelpOverlay()
+    {
+        if (!helpOverlay)
+            return;
+        auto area = getLocalBounds();
+        if (auto *d =
+                juce::Desktop::getInstance().getDisplays().getDisplayForRect(getScreenBounds()))
+            area = d->safeAreaInsets.subtractedFrom(area);
+        helpOverlay->setBounds(area);
+    }
+
+    std::unique_ptr<Surge::Mobile::HelpOverlay> helpOverlay;
 
     juce::TextButton optionsButton;
     juce::TextButton zoomInButton;
     juce::TextButton zoomOutButton;
     juce::TextButton zoomFitButton;
+    juce::TextButton performButton;
     juce::TextButton helpButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StandaloneWindow)
@@ -1078,8 +1227,29 @@ class StandaloneApp final : public juce::JUCEApplication
         }
     }
 
+    // Writes the current patch, audio setup and settings to disk so they come back on the next launch
+    void saveState()
+    {
+        for (auto *holder :
+             {pluginHolder.get(), mainWindow != nullptr ? mainWindow->pluginHolder.get() : nullptr})
+        {
+            if (holder != nullptr)
+            {
+                holder->savePluginState();
+                holder->saveAudioDeviceState();
+            }
+        }
+
+        appProperties.saveIfNeeded();
+    }
+
+    // Mobile apps are usually killed in the background without ever being asked to quit,
+    // so save whenever the app leaves the foreground.
+    void suspended() override { saveState(); }
+
     void shutdown() override
     {
+        saveState();
         pluginHolder = nullptr;
         mainWindow = nullptr;
         appProperties.saveIfNeeded();
@@ -1087,11 +1257,7 @@ class StandaloneApp final : public juce::JUCEApplication
 
     void systemRequestedQuit() override
     {
-        if (pluginHolder != nullptr)
-            pluginHolder->savePluginState();
-
-        if (mainWindow != nullptr)
-            mainWindow->pluginHolder->savePluginState();
+        saveState();
 
         if (juce::ModalComponentManager::getInstance()->cancelAllModalComponents())
         {

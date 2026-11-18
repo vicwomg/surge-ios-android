@@ -6416,6 +6416,11 @@ void SurgeGUIEditor::setSpecificPatchAsFavorite(int patchid, bool b)
         {
             favs.erase(std::remove(favs.begin(), favs.end(), patchid), favs.end());
         }
+
+        if (patchid == synth->patchid && patchSelector)
+        {
+            patchSelector->setIsFavorite(b);
+        }
     }
 }
 

@@ -408,6 +408,10 @@ std::string defaultKeyToString(DefaultKey k)
         r = "mobileScrollPosition";
         break;
 
+    case MobilePerformanceMode:
+        r = "mobilePerformanceMode";
+        break;
+
     case nKeys:
         break;
     }
